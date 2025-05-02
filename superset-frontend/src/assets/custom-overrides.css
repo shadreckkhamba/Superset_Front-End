@@ -1,0 +1,12 @@
+/* hide the global header/nav entirely */
+.app-header,
+.navbar,
+.dashboard-header {
+  display: none !important;
+}
+
+/* push the dashboard up into the freed space */
+.dashboard {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}

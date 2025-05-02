@@ -35,6 +35,7 @@ import {
   getClientErrorObject,
   css,
 } from '@superset-ui/core';
+import "../../../assets/custom-overrides.css";
 
 import Modal from 'src/components/Modal';
 import { JsonEditor } from 'src/components/AsyncAceEditor';

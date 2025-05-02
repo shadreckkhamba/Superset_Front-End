@@ -92,6 +92,15 @@ import isDashboardLoading from '../../util/isDashboardLoading';
 import { useChartIds } from '../../util/charts/useChartIds';
 import { useDashboardMetadataBar } from './useDashboardMetadataBar';
 import { useHeaderActionsMenu } from './useHeaderActionsDropdownMenu';
+import Modal from 'src/components/Modal';
+import { Checkbox } from 'src/components';
+import  { RootState } from 'src/dashboard/types';
+import { Popover } from 'antd';
+import html2pdf from 'html2pdf.js';
+import { jsPDF } from 'jspdf';
+import * as echarts from 'echarts';
+import html2canvas from 'html2canvas';
+
 
 const extensionsRegistry = getExtensionsRegistry();
 
@@ -161,6 +170,16 @@ const discardChanges = () => {
 };
 
 const Header = () => {
+  const [isReportsModalVisible, setReportsModalVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState('filters');
+  const [reportFormat, setReportFormat] = useState('image');
+  const [titleType, setTitleType] = useState('default');
+  const [reportTitle, setReportTitle] = useState('Untitled Report');
+  const allNativeFilters = useSelector(state => state.nativeFilters.filters);
+
+  const openReportsModal = () => setReportsModalVisible(true);
+  const closeReportsModal = () => setReportsModalVisible(false);
+
   const theme = useTheme();
   const dispatch = useDispatch();
   const [didNotifyMaxUndoHistoryToast, setDidNotifyMaxUndoHistoryToast] =
@@ -178,6 +197,127 @@ const Header = () => {
   const dataMask = useSelector(state => state.dataMask);
   const user = useSelector(state => state.user);
   const chartIds = useChartIds();
+  const [selectedFilterIds, setSelectedFilterIds] = useState([]);
+  const [isPopoverVisible, setIsPopoverVisible] = useState(false);
+
+  //Handle checkbox toggle
+  const toggleFilterSelection = filterId => {
+    setSelectedFilterIds(prev =>
+      prev.includes(filterId)
+        ? prev.filter(id => id !== filterId)
+        : [...prev, filterId],
+    );
+  };  
+
+    const appliedFilters = useMemo(() => {
+    
+      return (
+        Object.entries(dataMask || {})
+          .filter(([filterId]) => filterId.startsWith('NATIVE_FILTER-'))
+          .map(([filterId, filterData]) => {
+            const filterDefinition = allNativeFilters?.[filterId];
+            const label = filterDefinition?.label || filterDefinition?.name || filterId;
+    
+            const rawValue = filterData?.filterState?.value;
+            const value = Array.isArray(rawValue)
+              ? rawValue
+              : rawValue != null
+              ? [rawValue]
+              : [];
+    
+            return { id: filterId, label, value };
+          })
+          .filter(f => f.value.length)
+      );
+    }, [dataMask, allNativeFilters]);
+
+  const formatMenu = (
+    <div
+      onClick={e => e.stopPropagation()}
+      style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
+    >
+    <Button
+        buttonStyle="link"
+        style={{
+          display: 'block',
+          textAlign: 'left',
+          color: 'black', 
+          backgroundColor: '#f5f5f5', 
+          padding: '8px', 
+        }}
+        onClick={() => {
+          console.log('Save as Image');
+          console.log('Filters:', selectedFilterIds);
+          console.log('Charts:', selectedChartIds);
+          setIsPopoverVisible(false);
+          setTimeout(() => {
+            closeReportsModal();
+          }, 0);
+        }}
+      >
+        {t('Download Image')}
+      </Button>
+
+      <Button
+      buttonStyle="link"
+      style={{
+        display: 'block', 
+        textAlign: 'left',
+        color: 'black',
+        backgroundColor: '#f5f5f5',
+        padding: '8px',
+      }}
+      onClick={() => {
+        setIsPopoverVisible(false);
+        setTimeout(() => {
+          handleSaveAsPDF();
+          closeReportsModal();
+        }, 300); // Small delay to ensure PDF starts properly before modal closes
+      }}
+    >
+      {t('Download as PDF')}
+</Button>
+
+    </div>
+   );
+
+    // track which chart panels are selected
+    const [selectedChartIds, setSelectedChartIds] = useState([]);
+
+    // toggle a panel’s inclusion in the selection
+    const toggleChartSelection = panelId => {
+      setSelectedChartIds(prev =>
+        prev.includes(panelId)
+          ? prev.filter(id => id !== panelId)
+          : [...prev, panelId],
+      );
+    };
+
+   // selecting charts to be included in the report, now including layout metadata
+  const chartPanels = useSelector(state => {
+    const layoutItems = Object.values(state.dashboardLayout.present || {});
+    console.log('⭑ dashboardLayout.present items:', layoutItems);
+    return layoutItems
+      .filter(item => item?.meta && typeof item.meta.chartId === 'number')
+      .map(item => ({
+        id: item.id,
+        chartId: item.meta.chartId,
+        title:
+          item.meta.sliceNameOverride ||
+          item.meta.sliceName ||
+          `Chart ${item.meta.chartId}`,
+        layout: item.layout || item.component?.props?.layout || { x: 0, y: 0, w: 1, h: 1 },
+        altLayout1: item.component?.props?.layout,
+        altLayout2: item.props?.layout,
+        altLayout3: item.meta?.position,
+      }));
+  });
+  useEffect(() => {
+    if (!isReportsModalVisible && isPopoverVisible) {
+      setIsPopoverVisible(false);
+    }
+  }, [isReportsModalVisible, isPopoverVisible]);
+
 
   const {
     expandedSlices,
@@ -665,14 +805,27 @@ const Header = () => {
         {editMode ? (
           <UndoRedoKeyListeners onUndo={handleCtrlZ} onRedo={handleCtrlY} />
         ) : (
+          
           <div css={actionButtonsStyle}>
             {NavExtension && <NavExtension />}
+  
+            {/* ✅ Reports button */}
+            <Button
+              buttonStyle="secondary"
+              onClick={openReportsModal}
+              data-test="reports-button"
+              className="action-button"
+              css={editButtonStyle}
+              aria-label={t('Reports')}
+            >
+              {t('Reports')}
+            </Button>
             {userCanEdit && (
               <Button
                 buttonStyle="secondary"
                 onClick={() => {
                   toggleEditMode();
-                  boundActionCreators.clearDashboardHistory?.(); // Resets the `past` as an empty array
+                  boundActionCreators.clearDashboardHistory?.();
                 }}
                 data-test="edit-dashboard-button"
                 className="action-button"
@@ -683,6 +836,7 @@ const Header = () => {
               </Button>
             )}
           </div>
+
         )}
       </div>
     ),
@@ -705,7 +859,6 @@ const Header = () => {
       userCanSaveAs,
     ],
   );
-
   const handleReportDelete = async report => {
     await dispatch(deleteActiveReport(report));
     setCurrentReportDeleting(null);
@@ -747,6 +900,149 @@ const Header = () => {
     lastModifiedTime: actualLastModifiedTime,
     logEvent: boundActionCreators.logEvent,
   });
+
+  const handleSaveAsPDF = async () => {
+    // 1) Only selected charts
+    const selectedPanels = chartPanels.filter(c => selectedChartIds.includes(c.id));
+    if (!selectedPanels.length) {
+      console.error('No charts selected.');
+      return;
+    }
+    
+    // 2) PDF setup
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 20;
+    const spacing = 10;
+    const headerHeight = 40;
+    const titleHeight = 16;
+    
+    // Background + header
+    pdf.setFillColor(248, 249, 250);
+    pdf.rect(0, 0, pageWidth, pageHeight, 'F');
+    pdf.setFillColor('#003366');
+    pdf.rect(0, 0, pageWidth, headerHeight, 'F');
+    pdf.setFont('helvetica', 'bold').setFontSize(12).setTextColor('#fff');
+    const dateStr = new Date().toLocaleString('en-US', {
+      weekday: 'short', year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    pdf.text('Wandikweza Reports', margin, 25);
+    const titleText = reportTitle || 'Untitled Report';
+    const tw = pdf.getTextWidth(titleText);
+    pdf.text(titleText, (pageWidth - tw) / 2, 25);
+    const rw = pdf.getTextWidth(dateStr);
+    pdf.text(dateStr, pageWidth - margin - rw, 25);
+    
+    // 3) Measure charts
+    const measured = await Promise.all(
+      chartPanels
+        .filter(c => selectedChartIds.includes(c.id))
+        .map(async chart => {
+          const el = document.querySelector(`[data-test-chart-id="${chart.chartId}"]`);
+          const rect = el?.getBoundingClientRect() || { top: headerHeight + margin, width: 1, height: 1 };
+          return {
+            ...chart,
+            rowPx: rect.top,
+            wPx: rect.width,
+            hPx: rect.height,
+            ratio: rect.width / rect.height,
+            el,
+          };
+        })
+    );
+    
+    // 4) Group into rows by rowPx
+    const rows = [];
+    measured.forEach(chart => {
+      let row = rows.find(r => Math.abs(r.key - chart.rowPx) < 20);
+      if (row) {
+        row.items.push(chart);
+      } else {
+        rows.push({ key: chart.rowPx, items: [chart] });
+      }
+    });
+    rows.sort((a, b) => a.key - b.key);
+    
+    // 5) Render rows
+    let cursorY = headerHeight + margin + 20;
+    for (const { items } of rows) {
+      const availableWidth = pageWidth - margin * 2 - spacing * (items.length - 1);
+      const sumRatios = items.reduce((sum, c) => sum + c.ratio, 0);
+      let H = availableWidth / sumRatios;
+    
+      const availableRowHeight = pageHeight / 3;
+      const maxChartHeight = availableRowHeight - titleHeight;
+      if (H > maxChartHeight) H = maxChartHeight;
+    
+      let cursorX = margin;
+      const rowHeight = titleHeight + H;
+    
+      for (const chart of items) {
+        if (!chart.el) {
+          console.warn(`Element not found for chart ${chart.chartId} (${chart.title})`);
+          continue;
+        }
+    
+        const displayH = H;
+        const displayW = chart.ratio * H;
+    
+        // Hide menu buttons
+        const dots = Array.from(chart.el.querySelectorAll('button')).filter(b =>
+          (b.getAttribute('aria-label') || '').toLowerCase().includes('more') || b.textContent.trim() === '…'
+        );
+        const origDots = dots.map(b => b.style.display);
+        dots.forEach(b => (b.style.display = 'none'));
+    
+        // Hide Superset-rendered titles
+        const titleEls = Array.from(chart.el.querySelectorAll('.header-title, .editable-title'));
+        const origTitleDisplay = titleEls.map(el => el.style.display);
+        titleEls.forEach(el => (el.style.display = 'none'));
+    
+        // Draw our custom title
+        pdf.setFontSize(10).setTextColor('#000');
+        const lines = pdf.splitTextToSize(chart.title, displayW);
+        pdf.text(lines, cursorX, cursorY);
+    
+        // Snapshot chart
+        let imgData = '';
+        if (chart.el.querySelector('canvas')) {
+          const cv = chart.el.querySelector('canvas');
+          const off = document.createElement('canvas');
+          off.width = cv.width;
+          off.height = cv.height;
+          const ctx = off.getContext('2d');
+          ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, off.width, off.height);
+          ctx.drawImage(cv, 0, 0);
+          imgData = off.toDataURL();
+        } else {
+          const tmp = await html2canvas(chart.el, { scale: 2, backgroundColor: '#fff' });
+          imgData = tmp.toDataURL();
+        }
+        pdf.addImage(imgData, 'PNG', cursorX, cursorY + titleHeight, displayW, displayH);
+    
+        // Restore hidden elements
+        dots.forEach((b, i) => (b.style.display = origDots[i]));
+        titleEls.forEach((el, i) => (el.style.display = origTitleDisplay[i]));
+    
+        cursorX += displayW + spacing;
+      }
+    
+      cursorY += rowHeight + spacing;
+      if (cursorY > pageHeight - margin) {
+        pdf.addPage();
+        cursorY = margin;
+      }
+    }
+    
+  
+    pdf.save(`${reportTitle || 'Untitled Report'}.pdf`);
+  };
+
+    
+  
+  
   return (
     <div
       css={headerContainerStyle}
@@ -789,7 +1085,6 @@ const Header = () => {
         dashboardId={dashboardInfo.id}
         creationMethod="dashboards"
       />
-
       {currentReportDeleting && (
         <DeleteModal
           description={t(
@@ -823,8 +1118,260 @@ const Header = () => {
           }
         `}
       />
+
+    <Modal
+        title={t('Generate Report')}
+        visible={isReportsModalVisible}
+        onHide={closeReportsModal}
+        style={{ top: '20px' }}
+        bodyStyle={{ padding: 0, overflow: 'hidden' }}
+        footer={
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: '8px',
+              position: 'sticky',
+              bottom: 0,
+              background: 'white',
+              padding: '8px 24px',
+              borderTop: 'none',
+            }}
+          >
+            {/* Title selector on far left of footer */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'flex-start' }}>
+                  <label
+                    htmlFor="report-title"
+                    style={{ fontWeight: 'bold', fontSize: '16px', marginRight: '8px' }}
+                  >
+                    {t('Title')}
+                  </label>
+                  <input
+                    id="report-title"
+                    type="text"
+                    value={reportTitle}
+                    onChange={e => setReportTitle(e.target.value)}
+                    placeholder={t('Enter report title')}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid #ccc',
+                      width: '200px',
+                      backgroundColor: reportTitle ? '#fff' : '#f5f5f5',
+                      transition: 'width 0.4s ease, background-color 0.4s ease, border-color 0.4s ease',
+                      outline: 'none',
+                    }}
+                    onFocus={e => {
+                      e.target.style.backgroundColor = '#FFFFFF';
+                      e.target.style.borderColor = '#18c1ff';
+                      e.target.style.width = '300px';
+                    }} 
+                    onBlur={e => {
+                      e.target.style.backgroundColor = '#fff'; 
+                      e.target.style.borderColor = '#ccc';
+                      e.target.style.width = '200px';
+                    }}
+                  />
+                </div>
+
+            <Button buttonStyle="default" onClick={closeReportsModal}>
+              {t('Cancel')}
+            </Button>
+            <Popover
+              content={formatMenu}
+              placement="bottomRight"
+              trigger="click"
+              visible={isPopoverVisible}
+              onVisibleChange={visible => setIsPopoverVisible(visible)}
+              style={{ backgroundColor: '#f5f5f5' }}
+            >
+              <Button
+                buttonStyle="primary"
+                style={{ color: 'white', backgroundColor: '#1890ff' }}
+              >
+                {t('Save')} <span style={{ fontSize: '0.75em' }}>▼</span>
+              </Button>
+            </Popover>
+          </div>
+        }
+        closeOnEscape
+        showCloseButton
+      >
+        <div style={{ display: 'flex', height: '50vh', overflow: 'hidden' }}>
+          {/* Left panel with tabs */}
+          <div
+            style={{
+              width: '160px',
+              borderRight: '1px solid #ccc',
+              padding: '12px',
+            }}
+          >
+            <div
+              style={{
+                cursor: 'pointer',
+                marginBottom: '12px',
+                fontWeight: activeTab === 'filters' ? 'bold' : 'normal',
+                backgroundColor: activeTab === 'filters' ? '#f0f0f0' : 'transparent',
+                padding: '8px',
+                borderRadius: '4px',
+              }}
+              onClick={() => setActiveTab('filters')}
+            >
+              {t('Select Filters')}
+            </div>
+            <div
+              style={{
+                cursor: 'pointer',
+                fontWeight: activeTab === 'charts' ? 'bold' : 'normal',
+                backgroundColor: activeTab === 'charts' ? '#f0f0f0' : 'transparent',
+                padding: '8px',
+                borderRadius: '4px',
+              }}
+              onClick={() => setActiveTab('charts')}
+            >
+              {t('Select Charts')}
+            </div>
+          </div>
+
+          {/* Right panel: only scroll here */}
+          <div
+            style={{
+              flex: 1,
+              padding: '12px',
+              overflowY: 'auto',
+            }}
+          >
+            {activeTab === 'filters' ? (
+            <>
+              {Array.isArray(appliedFilters) && appliedFilters.length > 0 ? (
+                <>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    <p style={{ margin: 0 }}>
+                      {t('Choose filters to apply for the report')}
+                    </p>
+                    <div>
+                      <input
+                        type="checkbox"
+                        id="select-all-filters"
+                        checked={selectedFilterIds.length === appliedFilters.length}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            setSelectedFilterIds(appliedFilters.map(f => f.id));
+                          } else {
+                            setSelectedFilterIds([]);
+                          }
+                        }}
+                      />
+                      <label htmlFor="select-all-filters" style={{ marginLeft: '8px' }}>
+                        {selectedFilterIds.length === appliedFilters.length
+                          ? t('Deselect All')
+                          : t('Select All')}
+                      </label>
+                    </div>
+                  </div>
+
+                  {appliedFilters.map(filter => (
+                    <div key={filter.id} style={{ marginBottom: '8px' }}>
+                      <input
+                        type="checkbox"
+                        id={`filter-${filter.id}`}
+                        checked={selectedFilterIds.includes(filter.id)}
+                        onChange={() => toggleFilterSelection(filter.id)}
+                      />
+                      <label htmlFor={`filter-${filter.id}`} style={{ marginLeft: '8px' }}>
+                        {filter.label}
+                      </label>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p style={{ fontStyle: 'italic', marginBottom: '8px' }}>
+                  {t('No filters applied to the dashboard.')}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              {Array.isArray(chartPanels) && chartPanels.length > 0 ? (
+                <>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '12px',
+                    }}
+                  >
+                    <p style={{ margin: 0 }}>
+                      {t('Choose charts to include in the report')}
+                    </p>
+                    <div>
+                      <input
+                        type="checkbox"
+                        id="select-all-charts"
+                        checked={selectedChartIds.length === chartPanels.length}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            setSelectedChartIds(chartPanels.map(p => p.id));
+                          } else {
+                            setSelectedChartIds([]);
+                          }
+                        }}
+                      />
+                      <label htmlFor="select-all-charts" style={{ marginLeft: '8px' }}>
+                        {selectedChartIds.length === chartPanels.length
+                          ? t('Deselect All')
+                          : t('Select All')}
+                      </label>
+                    </div>
+                  </div>
+
+                  {chartPanels.map(panel => (
+                    <div key={panel.id} style={{ marginBottom: '8px' }}>
+                      <input
+                        type="checkbox"
+                        id={`chart-${panel.id}`}
+                        checked={selectedChartIds.includes(panel.id)}
+                        onChange={() => toggleChartSelection(panel.id)}
+                      />
+                      <label htmlFor={`chart-${panel.id}`} style={{ marginLeft: '8px' }}>
+                        {panel.title}
+                      </label>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p style={{ fontStyle: 'italic', marginBottom: '8px' }}>
+                  {t('No charts found on this dashboard.')}
+                </p>
+              )}
+            </>
+          )}
+          </div>
+        </div>
+      </Modal>
+
+
+      <div
+        css={css`
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          z-index: -1;
+        `}
+      />
+
     </div>
   );
 };
-
 export default Header;

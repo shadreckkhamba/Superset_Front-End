@@ -462,14 +462,14 @@ test('should show Exit fullscreen when in fullscreen mode', async () => {
 
   fireEvent.click(screen.getByTestId('actions-trigger'));
 
-  expect(await screen.findByText('Exit fullscreen')).toBeInTheDocument();
+  expect(await screen.findByText('Exit fullscreen mode')).toBeInTheDocument();
 });
 
 test('should have fullscreen option in dropdown', async () => {
   setup();
   await openActionsDropdown();
-  expect(screen.getByText('Exit fullscreen')).toBeInTheDocument();
-  expect(screen.queryByText('Enter fullscreen')).not.toBeInTheDocument();
+  expect(screen.getByText('Exit fullscreen mode')).toBeInTheDocument();
+  expect(screen.queryByText('Enter fullscreen mode')).not.toBeInTheDocument();
 });
 
 test('should render MetadataBar when not in edit mode and not embedded', () => {

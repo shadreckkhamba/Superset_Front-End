@@ -118,6 +118,7 @@ const StyledHeader = styled.header`
       }
   `}
 `;
+
 const { SubMenu } = MainNav;
 
 const StyledSubMenu = styled(SubMenu)`
@@ -128,16 +129,19 @@ const StyledSubMenu = styled(SubMenu)`
       margin-left: ${theme.gridUnit}px;
     }
     &.antd5-menu-submenu {
-        padding: ${theme.gridUnit * 2}px ${theme.gridUnit * 4}px;
-        display: flex;
-        align-items: center;
-        height: 100%;  &.antd5-menu-submenu-active {
-    .antd5-menu-title-content {
-      color: ${theme.colors.primary.base};
+      padding: ${theme.gridUnit * 2}px ${theme.gridUnit * 4}px;
+      display: flex;
+      align-items: center;
+      height: 100%;
     }
-  }
+    &.antd5-menu-submenu-active {
+      .antd5-menu-title-content {
+        color: ${theme.colors.primary.base};
+      }
+    }
   `}
 `;
+
 const { useBreakpoint } = Grid;
 
 export function Menu({
@@ -176,25 +180,61 @@ export function Menu({
   const defaultTabSelection: string[] = [];
   const [activeTabs, setActiveTabs] = useState(defaultTabSelection);
   const location = useLocation();
+
   useEffect(() => {
     const path = location.pathname;
     switch (true) {
       case path.startsWith(Paths.Dashboard):
-        setActiveTabs(['Dashboards']);
+        setActiveTabs(['My Dashboard']);
         break;
       case path.startsWith(Paths.Chart) || path.startsWith(Paths.Explore):
-        setActiveTabs(['Charts']);
+        setActiveTabs(['My Charts']);
         break;
       case path.startsWith(Paths.Datasets):
-        setActiveTabs(['Datasets']);
+        setActiveTabs(['My Datasets']);
         break;
       default:
         setActiveTabs(defaultTabSelection);
     }
   }, [location.pathname]);
-
+  
   const standalone = getUrlParam(URL_PARAMS.standalone);
   if (standalone || uiConfig.hideNav) return <></>;
+  
+  // ✅ Rename labels in the menu
+  const customizedMenu = menu.map(item => {
+    const updatedItem = {
+      ...item,
+      label:
+        item.label === 'Dashboards'
+          ? 'My Dashboard'
+          : item.label === 'Charts'
+          ? 'My Charts'
+          : item.label === 'Datasets'
+          ? 'My Datasets'
+          : item.label,
+    };
+  
+    if (updatedItem.childs) {
+      updatedItem.childs = updatedItem.childs.map(child => {
+        if (typeof child === 'object') {
+          const newLabel =
+            child.label === 'Dashboards'
+              ? 'My Dashboard'
+              : child.label === 'Charts'
+              ? 'My Charts'
+              : child.label === 'Datasets'
+              ? 'My Datasets'
+              : child.label;
+  
+          return { ...child, label: newLabel };
+        }
+        return child;
+      });
+    }
+  
+    return updatedItem;
+  });  
 
   const renderSubMenu = ({
     label,
@@ -257,6 +297,7 @@ export function Menu({
       </StyledSubMenu>
     );
   };
+
   return (
     <StyledHeader className="top" id="main-menu" role="navigation">
       <Row>
@@ -289,23 +330,17 @@ export function Menu({
             selectedKeys={activeTabs}
             disabledOverflow
           >
-            {menu.map((item, index) => {
+            {customizedMenu.map((item, index) => {
               const props = {
                 index,
                 ...item,
                 isFrontendRoute: isFrontendRoute(item.url),
-                childs: item.childs?.map(c => {
-                  if (typeof c === 'string') {
-                    return c;
-                  }
-
-                  return {
-                    ...c,
-                    isFrontendRoute: isFrontendRoute(c.url),
-                  };
-                }),
+                childs: item.childs?.map(c =>
+                  typeof c === 'string'
+                    ? c
+                    : { ...c, isFrontendRoute: isFrontendRoute(c.url) },
+                ),
               };
-
               return renderSubMenu(props);
             })}
           </MainNav>
@@ -324,41 +359,32 @@ export function Menu({
   );
 }
 
-// transform the menu data to reorganize components
+// Wrapper to split menus into main and settings
 export default function MenuWrapper({ data, ...rest }: MenuProps) {
   const newMenuData = {
     ...data,
   };
-  // Menu items that should go into settings dropdown
   const settingsMenus = {
     Data: true,
     Security: true,
     Manage: true,
   };
 
-  // Cycle through menu.menu to build out cleanedMenu and settings
   const cleanedMenu: MenuObjectProps[] = [];
   const settings: MenuObjectProps[] = [];
+
   newMenuData.menu.forEach((item: any) => {
-    if (!item) {
-      return;
-    }
+    if (!item) return;
 
     const children: (MenuObjectProps | string)[] = [];
-    const newItem = {
-      ...item,
-    };
+    const newItem = { ...item };
 
-    // Filter childs
     if (item.childs) {
       item.childs.forEach((child: MenuObjectChildProps | string) => {
-        if (typeof child === 'string') {
-          children.push(child);
-        } else if ((child as MenuObjectChildProps).label) {
+        if (typeof child === 'string' || (child as MenuObjectChildProps).label) {
           children.push(child);
         }
       });
-
       newItem.childs = children;
     }
 
